@@ -1,0 +1,37 @@
+# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: FSAI NATS App - Publish
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 2.1.4
+          
+      - uses: actions/checkout@v3
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.10"
+
+      - name: Install, Test, Build, Deploy
+        run: |
+          poetry version $(git describe --tags --abbrev=0)
+          make install
+          make test
+          make publish
+        env:
+          POETRY_PYPI_TOKEN_PYPI: "${{ secrets.PYPI_TOKEN }}"

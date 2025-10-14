@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, List, Union
 import nats
 from loguru import logger
 from nats.errors import TimeoutError
-from pydantic import BaseModel
+
 
 
 class ConsumerConfig:
@@ -50,7 +50,8 @@ class NatsApp:
         max_reconnect_attempts: int = 10000,
         ping_interval: int = 5,
         connect_timeout: float = 2.0,
-        logger_instance=None
+        logger_instance=None,
+        message_parser: Callable[[bytes], Any] = None
     ):
         self.servers = servers if isinstance(servers, list) else [servers]
         self.graceful_timeout = graceful_timeout
@@ -60,6 +61,7 @@ class NatsApp:
         self.ping_interval = ping_interval
         self.connect_timeout = connect_timeout
         self.logger = logger_instance or logger
+        self.message_parser = message_parser
         
         # Connection state
         self.nc = None
@@ -204,9 +206,12 @@ class NatsApp:
                 self.app = app_instance
                 self.info = info
             
-            async def publish(self, data: Union[BaseModel, dict, str]):
+            async def publish(self, data: Union[Any, dict, str, bytes]):
                 """Publish a message"""
-                if isinstance(data, BaseModel):
+                if isinstance(data, bytes):
+                    message_data = data
+                elif hasattr(data, 'model_dump'):
+                    # Handle pydantic BaseModel instances (duck typing)
                     message_data = json.dumps(data.model_dump()).encode()
                 elif isinstance(data, dict):
                     message_data = json.dumps(data).encode()
@@ -225,22 +230,24 @@ class NatsApp:
         """Handle incoming messages with error handling and state tracking"""
         handler_func = sub_info['func']
         subject = sub_info['subject']
+        data_str = None  # Initialize to avoid UnboundLocalError
         
         try:
             self.processing_message = True
             
-            # Parse message data
-            data_str = msg.data.decode()
-            
-            self.logger.debug(f"[{subject}] Received message: {data_str[:100]}{'...' if len(data_str) > 100 else ''}")
-            
-            # Try to parse as JSON, fallback to string
-            try:
-                data = json.loads(data_str)
-                self.logger.debug(f"[{subject}] Successfully parsed JSON message")
-            except json.JSONDecodeError:
-                data = data_str
-                self.logger.debug(f"[{subject}] Message is not JSON, using as string")
+            # Parse message data using configurable parser or default logic
+            if self.message_parser:
+                try:
+                    # Use custom message parser
+                    data = self.message_parser(msg.data)
+                    self.logger.debug(f"[{subject}] Successfully parsed message using custom parser: {len(msg.data)} bytes")
+                except Exception as parser_error:
+                    # If custom parser fails, fall back to default logic
+                    self.logger.debug(f"[{subject}] Custom parser failed ({parser_error}), trying default parsing")
+                    data = self._default_message_parsing(msg.data, subject)
+            else:
+                # Use default parsing logic
+                data = self._default_message_parsing(msg.data, subject)
             
             # Log message metadata
             self.logger.debug(f"[{subject}] Message metadata:")
@@ -267,7 +274,12 @@ class NatsApp:
         except Exception as e:
             sub_info['error_count'] += 1
             self.logger.error(f"[{subject}] Error processing message (error #{sub_info['error_count']}): {e}")
-            self.logger.debug(f"[{subject}] Message data that caused error: {data_str}")
+            
+            # Log message data appropriately based on type
+            if data_str is not None:
+                self.logger.debug(f"[{subject}] Message data that caused error: {data_str}")
+            else:
+                self.logger.debug(f"[{subject}] Error occurred with binary message of {len(msg.data)} bytes")
             
             # Negative acknowledge to trigger redelivery
             if not msg._ackd:
@@ -277,6 +289,30 @@ class NatsApp:
             raise
         finally:
             self.processing_message = False
+    
+    def _default_message_parsing(self, message_data: bytes, subject: str) -> Any:
+        """Default message parsing logic - tries UTF-8 -> JSON -> string -> bytes"""
+        data_str = None
+        
+        try:
+            # Try to decode as UTF-8 text
+            data_str = message_data.decode('utf-8')
+            
+            self.logger.debug(f"[{subject}] Received text message: {data_str[:100]}{'...' if len(data_str) > 100 else ''}")
+            
+            # Try to parse as JSON, fallback to string
+            try:
+                data = json.loads(data_str)
+                self.logger.debug(f"[{subject}] Successfully parsed JSON message")
+                return data
+            except json.JSONDecodeError:
+                self.logger.debug(f"[{subject}] Message is not JSON, using as string")
+                return data_str
+                
+        except UnicodeDecodeError:
+            # Not UTF-8, pass as raw bytes
+            self.logger.debug(f"[{subject}] Not UTF-8 text, using raw bytes: {len(message_data)} bytes")
+            return message_data
     
     async def connect(self):
         """Connect to NATS and setup JetStream"""

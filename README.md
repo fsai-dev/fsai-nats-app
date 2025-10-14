@@ -105,7 +105,8 @@ app = create_nats_app(
     max_reconnect_attempts=10000,  # Maximum reconnection attempts (-1 for infinite)
     ping_interval=5,               # Health check ping interval
     connect_timeout=2.0,           # Initial connection timeout
-    logger_instance=my_logger      # Custom logger instance (optional)
+    logger_instance=my_logger,     # Custom logger instance (optional)
+    message_parser=my_parser_func  # Custom message parser function (optional)
 )
 ```
 
@@ -315,6 +316,156 @@ async def process_analytics_batch(data, msg):
     # This handler will receive up to 50 messages
     event = AnalyticsEvent(**data)
     await store_analytics_event(event)
+```
+
+### Custom Message Parsers
+
+Override the default message parsing logic with a custom parser function:
+
+```python
+def custom_message_parser(message_bytes: bytes) -> Any:
+    """
+    Custom parser that handles special message formats.
+    
+    Args:
+        message_bytes: Raw message bytes from NATS
+        
+    Returns:
+        Parsed data in any format (dict, object, string, etc.)
+        
+    Raises:
+        Exception: If parsing fails, will fall back to default parser
+    """
+    # Example: Parse Protocol Buffer messages
+    try:
+        proto_message = MyProtoMessage()
+        proto_message.ParseFromString(message_bytes)
+        return proto_message
+    except Exception:
+        # If custom parsing fails, default parser will be used
+        raise
+
+# Create app with custom parser
+app = create_nats_app(
+    servers=["nats://localhost:4222"],
+    message_parser=custom_message_parser
+)
+
+@app.subscriber(
+    subject="proto.messages",
+    stream=StreamConfig(name="PROTO_STREAM"),
+    durable="proto_processor"
+)
+async def handle_proto_message(data, msg):
+    # data is already parsed by custom_message_parser
+    # data will be a MyProtoMessage instance
+    process_proto_data(data)
+```
+
+#### Common Custom Parser Use Cases
+
+**1. Protocol Buffers:**
+```python
+import my_proto_pb2
+
+def protobuf_parser(message_bytes: bytes):
+    message = my_proto_pb2.MyMessage()
+    message.ParseFromString(message_bytes)
+    return message
+
+app = create_nats_app(
+    servers=["nats://localhost:4222"],
+    message_parser=protobuf_parser
+)
+```
+
+**2. MessagePack:**
+```python
+import msgpack
+
+def msgpack_parser(message_bytes: bytes):
+    return msgpack.unpackb(message_bytes, raw=False)
+
+app = create_nats_app(
+    servers=["nats://localhost:4222"],
+    message_parser=msgpack_parser
+)
+```
+
+**3. AVRO:**
+```python
+import avro.io
+import io
+
+def avro_parser(message_bytes: bytes):
+    bytes_reader = io.BytesIO(message_bytes)
+    decoder = avro.io.BinaryDecoder(bytes_reader)
+    reader = avro.io.DatumReader(avro_schema)
+    return reader.read(decoder)
+
+app = create_nats_app(
+    servers=["nats://localhost:4222"],
+    message_parser=avro_parser
+)
+```
+
+**4. Custom Binary Format:**
+```python
+import struct
+
+def custom_binary_parser(message_bytes: bytes):
+    # Parse custom binary format: 4 bytes int, 8 bytes timestamp, rest is string
+    message_id = struct.unpack('>I', message_bytes[:4])[0]
+    timestamp = struct.unpack('>Q', message_bytes[4:12])[0]
+    payload = message_bytes[12:].decode('utf-8')
+    
+    return {
+        'id': message_id,
+        'timestamp': timestamp,
+        'payload': payload
+    }
+
+app = create_nats_app(
+    servers=["nats://localhost:4222"],
+    message_parser=custom_binary_parser
+)
+```
+
+#### Default Parser Behavior
+
+If no custom parser is provided (or if the custom parser raises an exception), the default parser will:
+
+1. **Try UTF-8 decoding**: Attempt to decode bytes as UTF-8 text
+2. **Try JSON parsing**: If UTF-8 successful, try parsing as JSON
+3. **Fallback to string**: If not JSON, return as plain string
+4. **Return raw bytes**: If not UTF-8, return original bytes
+
+```python
+# Default parsing logic (automatic):
+# - JSON message: {"key": "value"} → dict
+# - Plain text: "hello" → str
+# - Binary data: b'\x00\x01\x02' → bytes
+```
+
+#### Error Handling with Custom Parsers
+
+If your custom parser raises an exception, the default parser will automatically be used as a fallback:
+
+```python
+def strict_json_parser(message_bytes: bytes):
+    """Only parse JSON, fail otherwise"""
+    import json
+    return json.loads(message_bytes.decode('utf-8'))  # Will raise on non-JSON
+
+app = create_nats_app(
+    servers=["nats://localhost:4222"],
+    message_parser=strict_json_parser
+)
+
+# If strict_json_parser fails:
+# - Exception is logged
+# - Default parser takes over
+# - Message still gets processed
 ```
 
 ## 🔄 Migration from FastStream

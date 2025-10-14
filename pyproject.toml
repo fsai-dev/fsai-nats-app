@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "fsai-nats-app"
+version = "0.0.0"
+description = "NATS JetStream wrapper providing a FastStream-like interface for easy message handling."
+authors = ["Michael Mohamed <michael@foundationstack.com>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/fsai-dev/fsai-nats-app"
+repository = "https://github.com/fsai-dev/fsai-nats-app"
+
+include = [
+    "LICENSE",
+]
+
+[tool.poetry.dependencies]
+python = ">=3.8,<3.13"
+
+
+[tool.poetry.dev-dependencies]
+pytest = ">=5.2"
+
+[tool.poetry.requires-plugins]
+poetry-plugin-export = ">=1.8"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
