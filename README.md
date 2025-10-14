@@ -25,7 +25,9 @@ A Python wrapper that provides a FastStream-like interface for NATS JetStream, m
 ### Installation
 
 ```bash
-pip install nats-py pydantic loguru
+pip install fsai-nats-app
+or
+poetry add fsai-nats-app
 ```
 
 ### Basic Example
