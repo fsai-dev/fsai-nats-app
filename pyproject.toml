@@ -14,7 +14,7 @@ include = [
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.13"
-loguru = "^0.7.3"
+loguru = "^0.6.0"
 nats-py = "^2.11.0"
 
 
