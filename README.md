@@ -35,7 +35,7 @@ poetry add fsai-nats-app
 ```python
 import asyncio
 from pydantic import BaseModel
-from nats_wrapper import ConsumerConfig, PullSubConfig, StreamConfig, create_nats_app
+from fsai_nats_app.fsai_nats_app import ConsumerConfig, PullSubConfig, StreamConfig, create_nats_app
 
 # Define your data models
 class UserMessage(BaseModel):
@@ -494,7 +494,7 @@ async def handler(data: MyModel):
 
 ### After (NatsApp):
 ```python
-from nats_wrapper import create_nats_app, StreamConfig, PullSubConfig
+from fsai_nats_app.fsai_nats_app import create_nats_app, StreamConfig, PullSubConfig
 
 app = create_nats_app("nats://localhost:4222")
 
@@ -528,7 +528,7 @@ import os
 from datetime import datetime
 from pydantic import BaseModel
 from loguru import logger
-from nats_wrapper import create_nats_app, StreamConfig, PullSubConfig, ConsumerConfig
+from fsai_nats_app.fsai_nats_app import create_nats_app, StreamConfig, PullSubConfig, ConsumerConfig
 
 # Data Models
 class OrderCreated(BaseModel):
