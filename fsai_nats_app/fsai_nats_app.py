@@ -86,7 +86,8 @@ class NatsApp:
     
     async def _disconnected_cb(self):
         """Handle disconnection from NATS server"""
-        self.logger.error("🔌 Disconnected from NATS server")
+        # Normal during restarts / graceful shutdown; NATS auto-reconnects.
+        self.logger.warning("🔌 Disconnected from NATS server")
         self.logger.debug("Connection state: DISCONNECTED")
     
     async def _error_cb(self, e):
@@ -96,7 +97,8 @@ class NatsApp:
     
     async def _closed_cb(self):
         """Handle connection closure"""
-        self.logger.error("🚪 Connection to NATS server is closed")
+        # Normal during graceful shutdown; not an actionable error.
+        self.logger.warning("🚪 Connection to NATS server is closed")
         self.logger.debug("Connection state: CLOSED")
     
     async def _reconnected_cb(self):
@@ -285,8 +287,11 @@ class NatsApp:
             if not msg._ackd:
                 await msg.nak()
                 self.logger.debug(f"[{subject}] Message negatively acknowledged for redelivery")
-            
-            raise
+
+            # Do NOT re-raise. The failure is already logged and the message
+            # nak'd for redelivery here; re-raising would propagate to
+            # _process_messages and log + count the same error a second time
+            # (the "error #1" / "error #2" duplicate).
         finally:
             self.processing_message = False
     
